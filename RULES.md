@@ -171,7 +171,44 @@ Example: adding `impressions_all` to campaign output.
 
 ---
 
-## 8. Version Discipline
+## 8. Installation & Deployment
+
+### GitHub Repo
+```
+https://github.com/mahrukh-n8n/ppc-shared
+```
+
+### Local Development (both projects)
+```bash
+pip install -e C:\Users\Glorvax\Documents\ppc-shared
+```
+Editable install — changes to the package are picked up immediately, no reinstall needed.
+
+### Docker / Production (ppc logs app)
+In Dockerfile or requirements.txt:
+```
+pip install git+https://github.com/mahrukh-n8n/ppc-shared.git
+```
+**Do NOT copy the shared folder into the app repo.** Always install from GitHub. No local copies.
+
+### After Updating Shared Code
+```bash
+cd C:\Users\Glorvax\Documents\ppc-shared
+git add . && git commit -m "description of change" && git push
+
+# Local dev: nothing to do — editable install picks up changes automatically
+# Docker/production: rebuild the image to pull latest from GitHub
+```
+
+### CRITICAL: No Local Copies
+- **Never** copy `ppc_shared/` into the app repo or any consumer repo
+- **Never** vendor/inline the shared code into `process_upload.py` or `logs_maker.py`
+- If an AI assistant copies the files locally "for convenience" — delete the copy and point it to this rule
+- The only copy of this code lives in this repo: `github.com/mahrukh-n8n/ppc-shared`
+
+---
+
+## 9. Version Discipline
 
 When making changes:
 1. Read this file first
@@ -179,3 +216,5 @@ When making changes:
 3. Test the smoke test above
 4. Test both consumers
 5. If adding a field, document it here if it has special semantics
+6. Push to GitHub after testing
+7. Rebuild Docker images if deploying
