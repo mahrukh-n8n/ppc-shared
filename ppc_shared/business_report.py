@@ -29,8 +29,11 @@ def read_business_report(br_path, bulk_path=None, portfolio=None):
 
     try:
         ext = os.path.splitext(br_path)[1].lower()
-        if ext == ".csv":
-            br_df = pd.read_csv(br_path, encoding="utf-8-sig")
+        if ext in (".csv", ".xlsx", ".xls"):
+            if ext == ".csv":
+                br_df = pd.read_csv(br_path, encoding="utf-8-sig")
+            else:
+                br_df = pd.read_excel(br_path, engine="openpyxl")
             br_df.columns = br_df.columns.str.strip()
             for _, row in br_df.iterrows():
                 asin = safe_str(row.get("(Child) ASIN", row.get("asin", "")))
