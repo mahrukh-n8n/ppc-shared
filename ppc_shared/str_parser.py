@@ -85,18 +85,6 @@ def _validate_columns(mapping: dict[str, str]) -> list[str]:
     return [col for col in MANDATORY_COLUMNS if col not in mapping]
 
 
-# ─── Date column aliases (Amazon STR reports) ────────────────
-
-DATE_COLUMN_ALIASES = {
-    "start date": "start_date",
-    "start": "start_date",
-    "date range start": "start_date",
-    "end date": "end_date",
-    "end": "end_date",
-    "date range end": "end_date",
-}
-
-
 def _detect_period_from_file(filepath: str) -> tuple[str | None, str | None]:
     """Try to detect date period from filename, fall back to file mtime."""
     basename = os.path.basename(filepath)
@@ -184,41 +172,6 @@ def _detect_period_from_file(filepath: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _detect_period_from_columns(df: pd.DataFrame) -> tuple[str | None, str | None]:
-    """Detect date range from Start Date / End Date columns in the STR file.
-
-    Takes min of start date column and max of end date column.
-    """
-    # Map date columns
-    date_cols = {}
-    for col in df.columns:
-        col_lower = col.lower().strip()
-        canonical = DATE_COLUMN_ALIASES.get(col_lower)
-        if canonical:
-            date_cols[canonical] = col
-
-    start_col = date_cols.get("start_date")
-    end_col = date_cols.get("end_date")
-
-    if not start_col or not end_col:
-        return None, None
-
-    try:
-        # Parse dates — Amazon uses various formats
-        start_dates = pd.to_datetime(df[start_col], errors="coerce").dropna()
-        end_dates = pd.to_datetime(df[end_col], errors="coerce").dropna()
-
-        if start_dates.empty or end_dates.empty:
-            return None, None
-
-        d1 = start_dates.min()
-        d2 = end_dates.max()
-
-        return d1.strftime("%Y-%m-%d"), d2.strftime("%Y-%m-%d")
-    except Exception:
-        return None, None
-
-
 def parse_str(
     filepath: str,
     bulk_campaign_names: set[str] | None = None,
@@ -254,38 +207,8 @@ def parse_str(
     if missing:
         raise ValueError(f"STR file missing mandatory columns: {', '.join(missing)}")
 
-    warnings = []
-
-    # Detect period from filename
-    filename_start, filename_end = _detect_period_from_file(filepath)
-
-    # Detect period from Start Date / End Date columns
-    column_start, column_end = _detect_period_from_columns(df)
-
-    # Resolve period: prefer column dates (authoritative), detect conflicts
-    period_start = column_start or filename_start
-    period_end = column_end or filename_end
-    date_conflict = False
-
-    if filename_start and column_start:
-        if filename_start != column_start or filename_end != column_end:
-            date_conflict = True
-            warnings.append(
-                f"Date conflict: filename says {filename_start} to {filename_end}, "
-                f"but file columns say {column_start} to {column_end}. "
-                f"Using column dates ({period_start} to {period_end})."
-            )
-
-    if not period_start or not period_end:
-        # Fallback: use file modification date
-        try:
-            mtime = os.path.getmtime(filepath)
-            d2 = datetime.fromtimestamp(mtime)
-            d1 = d2 - timedelta(days=6)
-            period_start = d1.strftime("%Y-%m-%d")
-            period_end = d2.strftime("%Y-%m-%d")
-        except Exception:
-            pass
+    # Detect period
+    period_start, period_end = _detect_period_from_file(filepath)
 
     # Parse rows
     rows = []
