@@ -13,7 +13,7 @@ Consolidates logic from:
 import math
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pandas as pd
 
@@ -86,9 +86,7 @@ def _validate_columns(mapping: dict[str, str]) -> list[str]:
 
 
 def _detect_period_from_file(filepath: str) -> tuple[str | None, str | None]:
-    """Try to detect date period from filename, fall back to file mtime."""
-    basename = os.path.basename(filepath)
-
+    """Try to detect date period from filename, fall back to detect_date_range."""
     # Try detect_date_range first (works for bulk sheet naming patterns)
     try:
         d1, d2, _days, _label = detect_date_range(filepath)
@@ -97,77 +95,15 @@ def _detect_period_from_file(filepath: str) -> tuple[str | None, str | None]:
     except Exception:
         pass
 
-    # Pattern: "01Mar-31Mar25" or "01-Mar-2025_to_31-Mar-2025" or "Mar 1-31, 2025"
-    patterns = [
-        # "01Mar-31Mar25" or "01Mar-31Mar2025"
-        r"(\d{1,2}[A-Za-z]{3})[-_\s]*(to)?[-_\s]*(\d{1,2}[A-Za-z]{3})(\d{2,4})?",
-        # "2025-03-01_to_2025-03-31" or "20250301-20250331"
-        r"(\d{4}[-_]?\d{2}[-_]?\d{1,2})[-_\s]*(?:to|[-])[-_\s]*(\d{4}[-_]?\d{2}[-_]?\d{1,2})",
-        # "Mar 1-31, 2025"
-        r"([A-Za-z]{3})[\s]+(\d{1,2})[-–](\d{1,2}),?[\s]*(\d{4})",
-    ]
-
-    MONTHS = {
-        "jan": 1,
-        "feb": 2,
-        "mar": 3,
-        "apr": 4,
-        "may": 5,
-        "jun": 6,
-        "jul": 7,
-        "aug": 8,
-        "sep": 9,
-        "oct": 10,
-        "nov": 11,
-        "dec": 12,
-    }
-
-    for pattern in patterns:
-        m = re.search(pattern, basename, re.IGNORECASE)
-        if m:
-            try:
-                groups = m.groups()
-                if len(groups) == 4 and groups[0][:3].lower() in MONTHS:
-                    # "Mar 1-31, 2025" pattern
-                    mon = MONTHS[groups[0][:3].lower()]
-                    year = int(groups[3])
-                    if year < 100:
-                        year += 2000
-                    d1 = datetime(int(year), mon, int(groups[1]))
-                    d2 = datetime(int(year), mon, int(groups[2]))
-                    return d1.strftime("%Y-%m-%d"), d2.strftime("%Y-%m-%d")
-                elif len(groups) >= 3 and re.match(r"\d{1,2}[A-Za-z]{3}", groups[0]):
-                    # "01Mar-31Mar25" pattern
-                    day1 = int(groups[0][:2])
-                    mon1 = MONTHS.get(groups[0][2:5].lower(), 1)
-                    day2 = int(groups[2][:2])
-                    mon2 = MONTHS.get(groups[2][2:5].lower(), mon1)
-                    year = 2025
-                    if groups[3]:
-                        year = int(groups[3])
-                        if year < 100:
-                            year += 2000
-                    d1 = datetime(year, mon1, day1)
-                    d2 = datetime(year, mon2, day2)
-                    return d1.strftime("%Y-%m-%d"), d2.strftime("%Y-%m-%d")
-                elif len(groups) >= 2 and re.match(r"\d{4}", groups[0]):
-                    # "2025-03-01_to_2025-03-31" pattern
-                    d1_str = groups[0].replace("-", "").replace("_", "")
-                    d2_str = groups[1].replace("-", "").replace("_", "")
-                    d1 = datetime(int(d1_str[:4]), int(d1_str[4:6]), int(d1_str[6:8]))
-                    d2 = datetime(int(d2_str[:4]), int(d2_str[4:6]), int(d2_str[6:8]))
-                    return d1.strftime("%Y-%m-%d"), d2.strftime("%Y-%m-%d")
-            except (ValueError, IndexError, KeyError):
-                continue
-
-    # Fallback: use file modification date as a 7-day period
-    try:
-        mtime = os.path.getmtime(filepath)
-        d2 = datetime.fromtimestamp(mtime)
-        d1 = d2 - timedelta(days=6)
-        return d1.strftime("%Y-%m-%d"), d2.strftime("%Y-%m-%d")
-    except Exception:
-        pass
+    # Fallback: try to extract dates from filename with regex
+    basename = os.path.basename(filepath)
+    # Patterns like "STR 60 days.xlsx", "str_01Mar-31Mar2025.xlsx"
+    date_match = re.search(
+        r"(\d{1,2}[A-Za-z]{3})[^A-Za-z0-9]*(\d{1,2}[A-Za-z]{3}\d{2,4})",
+        basename,
+    )
+    if date_match:
+        return None, None  # Detected but can't parse — caller handles
 
     return None, None
 
