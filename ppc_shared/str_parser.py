@@ -23,7 +23,7 @@ from ppc_shared.detection import detect_date_range
 
 # ─── Column mapping with Amazon marketplace variants ─────────
 
-COLUMN_ALIASES = {
+_RAW_COLUMN_ALIASES = {
     "campaign name": "campaign_name",
     "campaign": "campaign_name",
     "ad group name": "ad_group_name",
@@ -37,11 +37,13 @@ COLUMN_ALIASES = {
     "spend": "spend",
     # Orders variants (Amazon changes these by marketplace)
     "7 day total orders (#)": "orders",
+    "7 day total orders": "orders",
     "orders": "orders",
     "purchases": "orders",
     "7 day total purchases": "orders",
     # Sales variants
     "7 day total sales": "sales",
+    "7 day total sales ($)": "sales",
     "sales": "sales",
     "revenue": "sales",
     "7 day total revenue": "sales",
@@ -61,9 +63,38 @@ MANDATORY_COLUMNS = [
 ]
 
 
+def _normalize_header_name(value: object) -> str:
+    """Canonicalize a single header for alias matching."""
+    header = safe_str(value).strip().lower()
+    header = header.replace("\u2010", "-").replace("\u2011", "-").replace("\u2012", "-")
+    header = header.replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-")
+    header = re.sub(r"\([^)]*\)", " ", header)
+    header = re.sub(r"[^a-z0-9]+", " ", header)
+    header = re.sub(r"\s+", " ", header)
+    return header.strip()
+
+
+COLUMN_ALIASES = {
+    _normalize_header_name(header): canonical
+    for header, canonical in _RAW_COLUMN_ALIASES.items()
+}
+
+
+# ─── Date column aliases (Amazon STR reports) ────────────────
+
+DATE_COLUMN_ALIASES = {
+    _normalize_header_name("start date"): "start_date",
+    _normalize_header_name("start"): "start_date",
+    _normalize_header_name("date range start"): "start_date",
+    _normalize_header_name("end date"): "end_date",
+    _normalize_header_name("end"): "end_date",
+    _normalize_header_name("date range end"): "end_date",
+}
+
+
 def _normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
-    """Lowercase and strip all column headers."""
-    df.columns = df.columns.str.lower().str.strip()
+    """Canonicalize all column headers before alias matching."""
+    df.columns = [_normalize_header_name(col) for col in df.columns]
     return df
 
 
@@ -83,18 +114,6 @@ def _map_columns(df: pd.DataFrame) -> dict[str, str]:
 def _validate_columns(mapping: dict[str, str]) -> list[str]:
     """Return list of missing mandatory columns."""
     return [col for col in MANDATORY_COLUMNS if col not in mapping]
-
-
-# ─── Date column aliases (Amazon STR reports) ────────────────
-
-DATE_COLUMN_ALIASES = {
-    "start date": "start_date",
-    "start": "start_date",
-    "date range start": "start_date",
-    "end date": "end_date",
-    "end": "end_date",
-    "date range end": "end_date",
-}
 
 
 def _detect_period_from_file(filepath: str) -> tuple[str | None, str | None]:
@@ -189,11 +208,9 @@ def _detect_period_from_columns(df: pd.DataFrame) -> tuple[str | None, str | Non
 
     Takes min of start date column and max of end date column.
     """
-    # Map date columns
     date_cols = {}
     for col in df.columns:
-        col_lower = col.lower().strip()
-        canonical = DATE_COLUMN_ALIASES.get(col_lower)
+        canonical = DATE_COLUMN_ALIASES.get(_normalize_header_name(col))
         if canonical:
             date_cols[canonical] = col
 
@@ -204,7 +221,6 @@ def _detect_period_from_columns(df: pd.DataFrame) -> tuple[str | None, str | Non
         return None, None
 
     try:
-        # Parse dates — Amazon uses various formats
         start_dates = pd.to_datetime(df[start_col], errors="coerce").dropna()
         end_dates = pd.to_datetime(df[end_col], errors="coerce").dropna()
 
@@ -238,17 +254,14 @@ def parse_str(
             "warnings": [...],
         }
     """
-    # Read file
     ext = os.path.splitext(filepath)[1].lower()
     if ext == ".csv":
         df = pd.read_csv(filepath)
     else:
         df = pd.read_excel(filepath, sheet_name=0, engine="openpyxl")
 
-    # Normalize headers
     df = _normalize_headers(df)
 
-    # Map columns to canonical names
     col_map = _map_columns(df)
     missing = _validate_columns(col_map)
     if missing:
@@ -256,20 +269,14 @@ def parse_str(
 
     warnings = []
 
-    # Detect period from filename
     filename_start, filename_end = _detect_period_from_file(filepath)
-
-    # Detect period from Start Date / End Date columns
     column_start, column_end = _detect_period_from_columns(df)
 
-    # Resolve period: prefer column dates (authoritative), detect conflicts
     period_start = column_start or filename_start
     period_end = column_end or filename_end
-    date_conflict = False
 
     if filename_start and column_start:
         if filename_start != column_start or filename_end != column_end:
-            date_conflict = True
             warnings.append(
                 f"Date conflict: filename says {filename_start} to {filename_end}, "
                 f"but file columns say {column_start} to {column_end}. "
@@ -277,7 +284,6 @@ def parse_str(
             )
 
     if not period_start or not period_end:
-        # Fallback: use file modification date
         try:
             mtime = os.path.getmtime(filepath)
             d2 = datetime.fromtimestamp(mtime)
@@ -287,9 +293,8 @@ def parse_str(
         except Exception:
             pass
 
-    # Parse rows
+    row_warnings = []
     rows = []
-    warnings = []
 
     for idx, row in df.iterrows():
         campaign = safe_str(row.get(col_map.get("campaign_name", ""), ""))
@@ -303,15 +308,13 @@ def parse_str(
         orders = int(safe_float(row.get(col_map.get("orders", ""), 0)))
         sales = safe_float(row.get(col_map.get("sales", ""), 0))
 
-        # Validation
         if not search_term:
-            warnings.append(f"Row {idx}: empty search term skipped")
+            row_warnings.append(f"Row {idx}: empty search term skipped")
             continue
         if spend < 0:
-            warnings.append(f"Row {idx}: negative spend {spend}")
+            row_warnings.append(f"Row {idx}: negative spend {spend}")
             continue
 
-        # Derived metrics
         acos = round(spend / sales * 100, 2) if sales > 0 else None
         ctr = round(clicks / impressions * 100, 4) if impressions > 0 else 0
         cvr = round(orders / clicks * 100, 2) if clicks > 0 else 0
@@ -344,5 +347,5 @@ def parse_str(
         "period_start": period_start,
         "period_end": period_end,
         "row_count": len(rows),
-        "warnings": warnings,
+        "warnings": [*warnings, *row_warnings],
     }
