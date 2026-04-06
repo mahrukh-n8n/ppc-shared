@@ -107,17 +107,17 @@ def enrich_rows(
         sales = row["sales"]
         clicks = row["clicks"]
 
-        n_spent = spend if orders > 0 else 0.0
-        c_spent = spend if orders == 0 else 0.0
+        c_spent = spend if orders > 0 else 0.0  # converting spend
+        n_spent = spend if orders == 0 else 0.0  # non-converting spend
 
         rpc = round(sales / clicks, 4) if clicks > 0 else 0.0
         target_cpc = round(rpc * target_acos / 100, 4) if clicks > 0 else 0.0
         cpa = round(spend / orders, 2) if orders > 0 else None
 
-        converting_spend_ratio = round(n_spent / spend, 4) if spend > 0 else 0.0
-        waste_ratio = round(c_spent / spend, 4) if spend > 0 else 0.0
+        converting_spend_ratio = round(c_spent / spend, 4) if spend > 0 else 0.0
+        waste_ratio = round(n_spent / spend, 4) if spend > 0 else 0.0
 
-        # ACoS Power = acos / (c_spent / sales * 100)
+        # ACoS Power = acos / (c_spent / sales * 100) — divide by converting spend acos
         c_spent_acos = (c_spent / sales * 100) if c_spent > 0 and sales > 0 else None
         acos_power = None
         if (

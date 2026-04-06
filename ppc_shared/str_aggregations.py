@@ -57,10 +57,10 @@ def aggregate_by_term(rows: list[dict]) -> list[dict]:
 
         n_spent = a["n_spent"]
         c_spent = a["c_spent"]
-        c_spent_acos = (c_spent / sales * 100) if c_spent > 0 and sales > 0 else None
+        n_spent_acos = (n_spent / sales * 100) if n_spent > 0 and sales > 0 else None
         acos_power = None
-        if acos is not None and c_spent_acos is not None and c_spent_acos > 0:
-            acos_power = round(acos / c_spent_acos, 4)
+        if acos is not None and n_spent_acos is not None and n_spent_acos > 0:
+            acos_power = round(acos / n_spent_acos, 4)
 
         rpc = round(sales / clicks, 4) if clicks > 0 else 0
         target_cpc = (
@@ -68,8 +68,8 @@ def aggregate_by_term(rows: list[dict]) -> list[dict]:
         )
         cpa = round(spend / orders, 2) if orders > 0 else None
 
-        converting_spend_ratio = round(n_spent / spend, 4) if spend > 0 else 0
-        waste_ratio = round(c_spent / spend, 4) if spend > 0 else 0
+        converting_spend_ratio = round(c_spent / spend, 4) if spend > 0 else 0
+        waste_ratio = round(n_spent / spend, 4) if spend > 0 else 0
 
         is_branded = any(
             r.get("is_branded", False)
@@ -157,10 +157,10 @@ def aggregate_by_campaign(rows: list[dict]) -> list[dict]:
         cpc = round(spend / clicks, 4) if clicks > 0 else 0
         ctr = round(clicks / a["impressions"] * 100, 4) if a["impressions"] > 0 else 0
 
-        c_spent_acos = (c_spent / sales * 100) if c_spent > 0 and sales > 0 else None
+        n_spent_acos = (n_spent / sales * 100) if n_spent > 0 and sales > 0 else None
         acos_power = None
-        if acos is not None and c_spent_acos is not None and c_spent_acos > 0:
-            acos_power = round(acos / c_spent_acos, 4)
+        if acos is not None and n_spent_acos is not None and n_spent_acos > 0:
+            acos_power = round(acos / n_spent_acos, 4)
 
         rpc = round(sales / clicks, 4) if clicks > 0 else 0
         cpa = round(spend / orders, 2) if orders > 0 else None
@@ -186,8 +186,8 @@ def aggregate_by_campaign(rows: list[dict]) -> list[dict]:
                 "rpc": rpc,
                 "cpa": cpa,
                 "acos_power": acos_power,
-                "converting_spend_ratio": round(n_spent / spend, 4) if spend > 0 else 0,
-                "waste_ratio": round(c_spent / spend, 4) if spend > 0 else 0,
+                "converting_spend_ratio": round(c_spent / spend, 4) if spend > 0 else 0,
+                "waste_ratio": round(n_spent / spend, 4) if spend > 0 else 0,
                 "spend_ratio": spend_ratio,
                 "order_ratio": order_ratio,
                 "clicks_per_order": clicks_per_order,
@@ -230,10 +230,10 @@ def aggregate_by_portfolio(rows: list[dict]) -> dict:
         "cpa": cpa,
         "n_spent": round(total_n_spent, 2),
         "c_spent": round(total_c_spent, 2),
-        "converting_spend_ratio": round(total_n_spent / total_spend, 4)
+        "converting_spend_ratio": round(total_c_spent / total_spend, 4)
         if total_spend > 0
         else 0,
-        "waste_ratio": round(total_c_spent / total_spend, 4) if total_spend > 0 else 0,
+        "waste_ratio": round(total_n_spent / total_spend, 4) if total_spend > 0 else 0,
         "unique_terms": len(set(r["customer_search_term"].lower() for r in rows)),
         "unique_campaigns": len(set(r.get("campaign_name", "") for r in rows)),
         "row_count": len(rows),
