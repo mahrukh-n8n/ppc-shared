@@ -8,6 +8,22 @@ This package is the single source of truth for PPC data processing. Two consumer
 
 Breaking a contract here breaks both.
 
+## Shared-Lib Usage Rule
+
+When implementing logic that already belongs in `ppc_shared`, do **not** recreate it in a consumer repo.
+
+Use these patterns consistently:
+- **Optimization** imports `ppc_shared` directly from Python scripts
+- **ppc logs app** uses thin Python bridge scripts that import `ppc_shared` directly
+- **Consumer TypeScript files are adapters only** — orchestration, auth, field mapping, Prisma writes, API handling
+- **Schema/processing logic lives here** when it is shared across consumers
+
+Current shared-runtime examples:
+- Bulk sheet + STR in `ppc logs app` use `scripts/process_upload.py` → `ppc_shared`
+- Recipe YAML validation in `ppc logs app` uses `scripts/recipe_yaml_bridge.py` → `ppc_shared.recipe`
+
+If a new feature needs the same logic in 2 places, move that logic into this repo and let consumers call it rather than duplicating it.
+
 ---
 
 ## 1. Output Contract
