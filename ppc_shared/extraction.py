@@ -3,6 +3,43 @@ from ppc_shared.utils import safe_float, safe_str, get_campaign_name, get_portfo
 from ppc_shared.parsers import parse_sheet
 
 
+def _sum_ad_group_metrics(df, portfolio=None):
+    """Aggregate ad-group metrics by campaign for SP fallback handling."""
+    aggregates = {}
+    for _, row in df.iterrows():
+        entity = safe_str(row.get("entity", row.get("Entity", ""))).lower()
+        if entity != "ad group":
+            continue
+
+        state = safe_str(row.get("ad group state (informational only)", row.get("state", "")))
+        if state == "archived":
+            continue
+
+        if portfolio and portfolio != "-":
+            port_name = get_portfolio_name(row)
+            if port_name.lower() != portfolio.lower():
+                continue
+
+        name = get_campaign_name(row)
+        if not name:
+            continue
+
+        agg = aggregates.setdefault(name, {
+            "impressions": 0.0,
+            "clicks": 0.0,
+            "spend": 0.0,
+            "sales": 0.0,
+            "orders_all": 0.0,
+        })
+        agg["impressions"] += safe_float(row.get("impressions"))
+        agg["clicks"] += safe_float(row.get("clicks"))
+        agg["spend"] += safe_float(row.get("spend"))
+        agg["sales"] += safe_float(row.get("sales"))
+        agg["orders_all"] += safe_float(row.get("units", row.get("orders")))
+
+    return aggregates
+
+
 def extract_campaigns(df, portfolio=None):
     """Extract campaign-level rows from a sheet DataFrame, optionally filtered by portfolio."""
     camps = {}
@@ -35,6 +72,34 @@ def extract_campaigns(df, portfolio=None):
             "clicks_all": safe_float(row.get("clicks")),
             "bidding_strategy": safe_str(row.get("bidding strategy")),
         }
+
+    # Some Amazon SP exports leave Campaign rows at zero conversions while the
+    # matching Ad group rows hold the real campaign totals.
+    ad_group_metrics = _sum_ad_group_metrics(df, portfolio)
+    for name, agg in ad_group_metrics.items():
+        camp = camps.get(name)
+        if not camp:
+            continue
+        if camp.get("orders_all", 0) > 0 or camp.get("sales", 0) > 0:
+            continue
+        if agg["orders_all"] <= 0 and agg["sales"] <= 0:
+            continue
+
+        impressions = agg["impressions"]
+        clicks = agg["clicks"]
+        spend = agg["spend"]
+        sales = agg["sales"]
+        orders = agg["orders_all"]
+
+        camp["clicks_all"] = clicks
+        camp["spend"] = spend
+        camp["sales"] = sales
+        camp["orders_all"] = orders
+        camp["ctr_all"] = (clicks / impressions) if impressions > 0 else 0.0
+        camp["cpc_all"] = (spend / clicks) if clicks > 0 else 0.0
+        camp["cr_all"] = (orders / clicks) if clicks > 0 else 0.0
+        camp["acos_all"] = (spend / sales) if sales > 0 else 0.0
+
     return camps
 
 
