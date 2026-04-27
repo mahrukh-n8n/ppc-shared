@@ -17,6 +17,7 @@ from ppc_shared.parsers import (
 from ppc_shared.detection import (
     detect_date_range,
     detect_marketplace_from_columns,
+    detect_marketplace_from_filename,
     CURRENCY_TO_MARKETPLACE,
 )
 from ppc_shared.extraction import (

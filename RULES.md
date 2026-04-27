@@ -116,6 +116,27 @@ asin_price, camp_asins, br_totals, br_rows = read_business_report(br_path, bulk_
 - **Add required parameters** — existing callers would break
 - **Import consumer-specific code** — this package must not know about logs_maker or process_upload
 
+## 4b. Text Matching Rules
+
+- **Never rely on case-sensitive matching** for Amazon-export text.
+- Normalize all sheet names, entity labels, states, placements, and portfolio-name comparisons.
+- Use shared helpers such as `normalize_text()` and `resolve_sheet_name()` instead of ad hoc `.lower()` or exact string equality.
+- Treat Amazon labels as unstable user data, not fixed enums.
+
+Concrete failures we already hit:
+- Amazon exported `Sponsored Brands campaigns`, while the code expected `Sponsored Brands Campaigns`.
+  Result: the SB tab was silently skipped, SB campaigns disappeared, and the app raised false `Campaign no longer present` warnings.
+- Amazon exported `Sponsored Display campaigns`, while the code expected `Sponsored Display Campaigns`.
+  Result: SD parsing can fail for the same reason.
+- Amazon SP bulk sheets can show stale zero conversions on the `Campaign` row while the matching `Ad group` row contains the real totals.
+  Example:
+  `Leather Kit-MA DO-4 ASINs-17Apr12026` showed `Orders = 0` on the `Campaign` row but `Orders = 1` and `Sales = 49.99` on the `Ad group` row.
+  Result: campaign totals were wrong until we added ad-group fallback logic.
+
+Rule of thumb:
+- If the source is Amazon text, assume capitalization, spacing, and wording can drift.
+- If parent and child rows disagree, verify whether Amazon is surfacing the real metric on the lower-level rows before trusting the parent row.
+
 ## 5. What You MUST Test After Changes
 
 ```bash

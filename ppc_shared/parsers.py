@@ -1,13 +1,60 @@
 """Sheet-level parsers for Amazon bulk sheet (SP, SB, SD)."""
 import pandas as pd
 
-from ppc_shared.utils import safe_float, safe_str
+from ppc_shared.utils import normalize_text, safe_float, safe_str
+
+
+SHEET_NAME_ALIASES = {
+    "Sponsored Products Campaigns": [
+        "Sponsored Products Campaigns",
+    ],
+    "Sponsored Brands Campaigns": [
+        "Sponsored Brands Campaigns",
+        "Sponsored Brands campaigns",
+    ],
+    "Sponsored Display Campaigns": [
+        "Sponsored Display Campaigns",
+        "Sponsored Display campaigns",
+    ],
+    "Portfolios": [
+        "Portfolios",
+    ],
+}
+
+
+def resolve_sheet_name(file_path, sheet_name):
+    """Resolve a sheet name case-insensitively using known aliases first."""
+    try:
+        excel = pd.ExcelFile(file_path, engine="openpyxl")
+    except Exception:
+        return None
+
+    normalized_to_actual = {
+        normalize_text(actual): actual
+        for actual in excel.sheet_names
+    }
+
+    candidates = SHEET_NAME_ALIASES.get(sheet_name, [sheet_name])
+    for candidate in candidates:
+        actual = normalized_to_actual.get(normalize_text(candidate))
+        if actual:
+            return actual
+
+    requested = normalize_text(sheet_name)
+    for normalized, actual in normalized_to_actual.items():
+        if normalized == requested:
+            return actual
+
+    return None
 
 
 def parse_sheet(file_path, sheet_name):
     """Read a single sheet from bulk file. Returns DataFrame with lowercase columns, or None."""
     try:
-        df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
+        resolved_sheet_name = resolve_sheet_name(file_path, sheet_name)
+        if resolved_sheet_name is None:
+            return None
+        df = pd.read_excel(file_path, sheet_name=resolved_sheet_name, engine="openpyxl")
         df.columns = df.columns.str.lower()
         return df
     except Exception:
@@ -35,20 +82,20 @@ def parse_sp_sheet(file_path):
     negative_keywords, validation_warnings = [], []
 
     def _get_ad_group_name(row):
-        name = row.get("Ad group name", "")
+        name = row.get("ad group name", "")
         if pd.isna(name) or name == "":
             name = row.get("ad group name (informational only)", "")
         return safe_str(name)
 
     for idx, row in df.iterrows():
-        entity = safe_str(row.get("entity", "Unknown")).lower()
+        entity = normalize_text(row.get("entity", "Unknown"))
         try:
             if entity == "campaign":
                 campaign_name = get_campaign_name(row)
                 if not campaign_name:
                     validation_warnings.append(f"Row {idx}: Missing Campaign Name")
                     continue
-                state = safe_str(row.get("campaign state (informational only)", ""))
+                state = normalize_text(row.get("campaign state (informational only)", ""))
                 if state == "archived":
                     continue
                 campaigns.append({
@@ -73,7 +120,7 @@ def parse_sp_sheet(file_path):
                     "zero_spend": safe_float(row.get("spend")) == 0,
                 })
             elif entity == "ad group":
-                state = safe_str(row.get("ad group state (informational only)", ""))
+                state = normalize_text(row.get("ad group state (informational only)", ""))
                 if state == "archived":
                     continue
                 ad_groups.append({
@@ -92,7 +139,7 @@ def parse_sp_sheet(file_path):
                     "status": "paused" if state == "paused" else "active",
                 })
             elif entity == "keyword":
-                state = safe_str(row.get("state", ""))
+                state = normalize_text(row.get("state", ""))
                 if state == "archived":
                     continue
                 keywords.append({
@@ -113,7 +160,7 @@ def parse_sp_sheet(file_path):
                     "status": "paused" if state == "paused" else "active",
                 })
             elif entity == "product ad":
-                state = safe_str(row.get("state", ""))
+                state = normalize_text(row.get("state", ""))
                 if state == "archived":
                     continue
                 product_ads.append({
@@ -124,7 +171,7 @@ def parse_sp_sheet(file_path):
                     "state": state,
                 })
             elif entity in ("product targeting", "negative product targeting"):
-                state = safe_str(row.get("state", ""))
+                state = normalize_text(row.get("state", ""))
                 if state == "archived":
                     continue
                 is_negative = entity == "negative product targeting"
@@ -148,14 +195,14 @@ def parse_sp_sheet(file_path):
                 })
             elif entity in ("negative keyword", "campaign negative keyword"):
                 keyword_text = safe_str(row.get("keyword text"))
-                state = safe_str(row.get("state", ""))
+                state = normalize_text(row.get("state", ""))
                 if not keyword_text or state == "archived":
                     continue
                 negative_keywords.append({
                     "campaign_name": get_campaign_name(row),
                     "ad_group_name": _get_ad_group_name(row) if entity == "negative keyword" else "",
-                    "keyword_text": keyword_text.lower(),
-                    "match_type": safe_str(row.get("match type")).lower(),
+                    "keyword_text": normalize_text(keyword_text),
+                    "match_type": normalize_text(row.get("match type")),
                     "level": "campaign" if entity == "campaign negative keyword" else "ad_group",
                     "state": state,
                 })
@@ -198,16 +245,17 @@ def parse_sb_sheet(file_path):
         return {"sb_campaigns": [], "sb_keywords": []}
     sb_campaigns, sb_keywords = [], []
     for _, row in df.iterrows():
-        entity = safe_str(row.get("entity", "")).lower()
+        entity = normalize_text(row.get("entity", ""))
         if entity == "campaign":
             name = safe_str(row.get("campaign name"))
-            state = safe_str(row.get("campaign state (informational only)", row.get("state", "")))
+            state = normalize_text(row.get("campaign state (informational only)", row.get("state", "")))
             if state == "archived" or not name:
                 continue
-            is_video = any(v in name.lower() for v in ["video", "sbv"])
+            is_video = any(v in normalize_text(name) for v in ["video", "sbv"])
             sb_campaigns.append({
                 "campaign_name": name, "ad_type": "SBV" if is_video else "SB",
                 "state": state, "budget": safe_float(row.get("budget")),
+                "bid_optimisation": safe_str(row.get("bid optimisation", row.get("bid optimization", ""))),
                 "portfolio_name": safe_str(row.get("portfolio name (informational only)")),
                 "impressions": safe_float(row.get("impressions")),
                 "clicks": safe_float(row.get("clicks")),
@@ -222,7 +270,7 @@ def parse_sb_sheet(file_path):
                 "units": safe_float(row.get("units")),
             })
         elif entity == "keyword":
-            state = safe_str(row.get("state", ""))
+            state = normalize_text(row.get("state", ""))
             if state == "archived":
                 continue
             sb_keywords.append({
@@ -247,15 +295,16 @@ def parse_sd_sheet(file_path):
         return {"sd_campaigns": [], "sd_targets": []}
     sd_campaigns, sd_targets = [], []
     for _, row in df.iterrows():
-        entity = safe_str(row.get("entity", "")).lower()
+        entity = normalize_text(row.get("entity", ""))
         if entity == "campaign":
             name = safe_str(row.get("campaign name"))
-            state = safe_str(row.get("campaign state (informational only)", row.get("state", "")))
+            state = normalize_text(row.get("campaign state (informational only)", row.get("state", "")))
             if state == "archived" or not name:
                 continue
             sd_campaigns.append({
                 "campaign_name": name, "ad_type": "SD", "state": state,
                 "budget": safe_float(row.get("budget")),
+                "bid_optimisation": safe_str(row.get("bid optimisation", row.get("bid optimization", ""))),
                 "portfolio_name": safe_str(row.get("portfolio name (informational only)")),
                 "tactic": safe_str(row.get("tactic")),
                 "cost_type": safe_str(row.get("cost type")),
@@ -271,9 +320,14 @@ def parse_sd_sheet(file_path):
                 "ctr": safe_float(row.get("click-through rate")),
                 "units": safe_float(row.get("units")),
                 "viewable_impressions": safe_float(row.get("viewable impressions")),
+                "sales_views_clicks": safe_float(row.get("sales (views & clicks)", row.get("sales (views and clicks)"))),
+                "orders_views_clicks": safe_float(row.get("orders (views & clicks)", row.get("orders (views and clicks)"))),
+                "units_views_clicks": safe_float(row.get("units (views & clicks)", row.get("units (views and clicks)"))),
+                "acos_views_clicks": safe_float(row.get("acos (views & clicks)", row.get("acos (views and clicks)"))),
+                "roas_views_clicks": safe_float(row.get("roas (views & clicks)", row.get("roas (views and clicks)"))),
             })
         elif entity == "audience targeting":
-            state = safe_str(row.get("state", ""))
+            state = normalize_text(row.get("state", ""))
             if state == "archived":
                 continue
             sd_targets.append({

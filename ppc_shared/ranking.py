@@ -2,7 +2,7 @@
 import csv
 import os
 
-from ppc_shared.utils import safe_str, get_portfolio_name
+from ppc_shared.utils import get_portfolio_name, normalize_text, safe_str
 from ppc_shared.parsers import parse_sheet
 
 
@@ -32,8 +32,8 @@ def apply_ranking_data(campaigns, ranking_path, bulk_path, portfolio, marketplac
 
     # Filter by marketplace
     if marketplace:
-        mp_lower = marketplace.lower()
-        rank_rows = [r for r in rank_rows if r.get("Marketplace", "").lower() == mp_lower]
+        mp_norm = normalize_text(marketplace)
+        rank_rows = [r for r in rank_rows if normalize_text(r.get("Marketplace", "")) == mp_norm]
         if not rank_rows:
             print(f"WARNING: No ranking rows match marketplace '{marketplace}'")
             return
@@ -42,9 +42,9 @@ def apply_ranking_data(campaigns, ranking_path, bulk_path, portfolio, marketplac
     has_split_ranks = "Organic Rank" in rank_rows[0]
     rank_lookup = {}
     for r in rank_rows:
-        kw = r.get("Keyword", "").lower().strip()
+        kw = normalize_text(r.get("Keyword", ""))
         asin = r.get("ASIN", "").strip()
-        found = r.get("Found", "").strip().lower() == "true"
+        found = normalize_text(r.get("Found", "")) == "true"
         if not kw or not asin:
             continue
         if has_split_ranks:
@@ -70,21 +70,22 @@ def apply_ranking_data(campaigns, ranking_path, bulk_path, portfolio, marketplac
 
     camp_keywords = {}
     camp_asins_map = {}
+    portfolio_norm = normalize_text(portfolio)
     for _, row in sp_df.iterrows():
-        entity = safe_str(row.get("entity", "")).lower()
+        entity = normalize_text(row.get("entity", ""))
         camp = safe_str(row.get("campaign name (informational only)",
                                  row.get("campaign name", "")))
         if not camp:
             continue
         if portfolio and portfolio != "-":
             port = get_portfolio_name(row)
-            if port.lower() != portfolio.lower():
+            if normalize_text(port) != portfolio_norm:
                 continue
-        if entity == "keyword" and safe_str(row.get("state", "")).lower() == "enabled":
-            kw_text = safe_str(row.get("keyword text", "")).lower()
+        if entity == "keyword" and normalize_text(row.get("state", "")) == "enabled":
+            kw_text = normalize_text(row.get("keyword text", ""))
             if kw_text:
                 camp_keywords.setdefault(camp, []).append(kw_text)
-        elif entity == "product ad" and safe_str(row.get("state", "")).lower() != "archived":
+        elif entity == "product ad" and normalize_text(row.get("state", "")) != "archived":
             asin = safe_str(row.get("asin (informational only)", ""))
             if asin:
                 camp_asins_map.setdefault(camp, set()).add(asin)

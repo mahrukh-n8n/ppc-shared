@@ -1,5 +1,6 @@
 """Shared utility functions — safe type conversion, name extraction."""
 import math
+import re
 
 import pandas as pd
 
@@ -32,6 +33,14 @@ def safe_str(val, default=""):
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return default
     return str(val).strip()
+
+
+def normalize_text(val, default=""):
+    """Normalize text for case-insensitive, whitespace-tolerant matching."""
+    s = safe_str(val, default)
+    if not s:
+        return default
+    return re.sub(r"\s+", " ", s).strip().casefold()
 
 
 def get_campaign_name(row):

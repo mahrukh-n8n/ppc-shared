@@ -1,23 +1,31 @@
 """Campaign, placement, and bid extraction from bulk sheet DataFrames."""
-from ppc_shared.utils import safe_float, safe_str, get_campaign_name, get_portfolio_name
 from ppc_shared.parsers import parse_sheet
+from ppc_shared.utils import (
+    get_campaign_name,
+    get_portfolio_name,
+    normalize_text,
+    safe_float,
+    safe_str,
+)
 
 
 def _sum_ad_group_metrics(df, portfolio=None):
     """Aggregate ad-group metrics by campaign for SP fallback handling."""
     aggregates = {}
+    portfolio_norm = normalize_text(portfolio)
+
     for _, row in df.iterrows():
-        entity = safe_str(row.get("entity", row.get("Entity", ""))).lower()
+        entity = normalize_text(row.get("entity", row.get("Entity", "")))
         if entity != "ad group":
             continue
 
-        state = safe_str(row.get("ad group state (informational only)", row.get("state", "")))
+        state = normalize_text(row.get("ad group state (informational only)", row.get("state", "")))
         if state == "archived":
             continue
 
         if portfolio and portfolio != "-":
             port_name = get_portfolio_name(row)
-            if port_name.lower() != portfolio.lower():
+            if normalize_text(port_name) != portfolio_norm:
                 continue
 
         name = get_campaign_name(row)
@@ -43,20 +51,26 @@ def _sum_ad_group_metrics(df, portfolio=None):
 def extract_campaigns(df, portfolio=None):
     """Extract campaign-level rows from a sheet DataFrame, optionally filtered by portfolio."""
     camps = {}
+    portfolio_norm = normalize_text(portfolio)
+
     for _, row in df.iterrows():
-        entity = safe_str(row.get("entity", row.get("Entity", ""))).lower()
+        entity = normalize_text(row.get("entity", row.get("Entity", "")))
         if entity != "campaign":
             continue
+
         name = get_campaign_name(row)
         if not name:
             continue
-        state = safe_str(row.get("campaign state (informational only)",
-                                  row.get("state", row.get("State", ""))))
+
+        state = normalize_text(
+            row.get("campaign state (informational only)", row.get("state", row.get("State", "")))
+        )
         if state == "archived":
             continue
+
         if portfolio and portfolio != "-":
             port_name = get_portfolio_name(row)
-            if port_name.lower() != portfolio.lower():
+            if normalize_text(port_name) != portfolio_norm:
                 continue
 
         camps[name] = {
@@ -111,20 +125,24 @@ def extract_placement_data(df, portfolio_camps, placement_name):
         "pp": "placement product page",
         "ab": "placement amazon business",
     }
-    target_placement = placement_map.get(placement_name, placement_name)
+    target_placement = normalize_text(placement_map.get(placement_name, placement_name))
     data = {}
+
     for _, row in df.iterrows():
-        entity = safe_str(row.get("entity", "")).lower()
+        entity = normalize_text(row.get("entity", ""))
         if entity != "bidding adjustment":
             continue
-        placement = safe_str(row.get("placement", "")).lower()
+
+        placement = normalize_text(row.get("placement", ""))
         if placement != target_placement:
             continue
+
         camp_name = safe_str(
             row.get("campaign name (informational only)", row.get("campaign name", ""))
         )
         if camp_name not in portfolio_camps:
             continue
+
         data[camp_name] = {
             f"acos_{placement_name}": safe_float(row.get("acos")),
             f"cr_{placement_name}": safe_float(row.get("conversion rate")),
@@ -141,17 +159,20 @@ def extract_base_bids(df, portfolio_camps):
     """Extract base bid per campaign from keyword/product targeting rows (enabled only)."""
     bids = {}
     for _, row in df.iterrows():
-        entity = safe_str(row.get("entity", "")).lower()
+        entity = normalize_text(row.get("entity", ""))
         if entity not in ("keyword", "product targeting"):
             continue
-        state = safe_str(row.get("state", "")).lower()
+
+        state = normalize_text(row.get("state", ""))
         if state != "enabled":
             continue
+
         camp_name = safe_str(
             row.get("campaign name (informational only)", row.get("campaign name", ""))
         )
         if camp_name not in portfolio_camps or camp_name in bids:
             continue
+
         bid = safe_float(row.get("bid"))
         if bid > 0:
             bids[camp_name] = bid
@@ -159,22 +180,27 @@ def extract_base_bids(df, portfolio_camps):
 
 
 def extract_campaign_asins(bulk_path, portfolio=None):
-    """Build campaign → set of ASINs map from product ads in bulk sheet."""
+    """Build campaign -> set of ASINs map from product ads in bulk sheet."""
     sp_df = parse_sheet(bulk_path, "Sponsored Products Campaigns")
     camp_asins = {}
     if sp_df is None:
         return camp_asins
+
+    portfolio_norm = normalize_text(portfolio)
     for _, row in sp_df.iterrows():
-        entity = safe_str(row.get("entity", "")).lower()
+        entity = normalize_text(row.get("entity", ""))
         if entity != "product ad":
             continue
-        state = safe_str(row.get("state", "")).lower()
+
+        state = normalize_text(row.get("state", ""))
         if state == "archived":
             continue
+
         if portfolio and portfolio != "-":
             port = get_portfolio_name(row)
-            if port.lower() != portfolio.lower():
+            if normalize_text(port) != portfolio_norm:
                 continue
+
         camp = safe_str(
             row.get("campaign name (informational only)", row.get("campaign name", ""))
         )

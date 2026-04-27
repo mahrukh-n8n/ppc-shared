@@ -1,5 +1,6 @@
 """Portfolio name extraction from bulk sheets."""
 from ppc_shared.parsers import parse_sheet
+from ppc_shared.utils import normalize_text
 
 
 def extract_portfolio_names(file_path):
@@ -15,10 +16,11 @@ def extract_portfolio_names(file_path):
         if df is None:
             continue
         col = None
+        normalized_columns = {normalize_text(col_name): col_name for col_name in df.columns}
         for c in ["portfolio name (informational only)", "portfolio name",
                   "Portfolio name", "Portfolio Name"]:
-            if c in df.columns:
-                col = c
+            col = normalized_columns.get(normalize_text(c))
+            if col:
                 break
         if not col:
             continue
