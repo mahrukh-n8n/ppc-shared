@@ -31,7 +31,7 @@ def extract_campaigns(df, portfolio=None):
             "spend": safe_float(row.get("spend")),
             "sales": safe_float(row.get("sales")),
             "budget": safe_float(row.get("daily budget", row.get("budget"))),
-            "orders_all": safe_float(row.get("units", row.get("orders"))),
+            "orders_all": safe_float(row.get("purchases", row.get("units", row.get("orders")))),
             "clicks_all": safe_float(row.get("clicks")),
             "bidding_strategy": safe_str(row.get("bidding strategy")),
         }
@@ -65,7 +65,7 @@ def extract_placement_data(df, portfolio_camps, placement_name):
             f"cr_{placement_name}": safe_float(row.get("conversion rate")),
             f"cpc_{placement_name}": safe_float(row.get("cpc")),
             f"ctr_{placement_name}": safe_float(row.get("click-through rate")),
-            f"orders_{placement_name}": safe_float(row.get("units", row.get("orders"))),
+            f"orders_{placement_name}": safe_float(row.get("purchases", row.get("units", row.get("orders")))),
             f"clicks_{placement_name}": safe_float(row.get("clicks")),
             f"pct_{placement_name}": safe_float(row.get("percentage")),
         }
