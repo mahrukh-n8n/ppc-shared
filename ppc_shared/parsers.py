@@ -25,13 +25,14 @@ SHEET_NAME_ALIASES = {
 def resolve_sheet_name(file_path, sheet_name):
     """Resolve a sheet name case-insensitively using known aliases first."""
     try:
-        excel = pd.ExcelFile(file_path, engine="openpyxl")
+        with pd.ExcelFile(file_path, engine="openpyxl") as excel:
+            sheet_names = list(excel.sheet_names)
     except Exception:
         return None
 
     normalized_to_actual = {
         normalize_text(actual): actual
-        for actual in excel.sheet_names
+        for actual in sheet_names
     }
 
     candidates = SHEET_NAME_ALIASES.get(sheet_name, [sheet_name])
@@ -225,6 +226,32 @@ def parse_sp_sheet(file_path):
         except Exception as e:
             validation_warnings.append(f"Row {idx}: Error processing entity {entity} - {e}")
 
+    if campaigns:
+        from ppc_shared.extraction import (
+            _sum_ad_group_metrics,
+            _sum_target_metrics,
+            apply_ad_group_metric_reconciliation,
+        )
+
+        campaign_map = {c["campaign_name"]: c for c in campaigns}
+        apply_ad_group_metric_reconciliation(
+            campaign_map,
+            _sum_ad_group_metrics(df),
+            _sum_target_metrics(df),
+            orders_key="orders",
+            clicks_key="clicks",
+            ctr_key="ctr",
+            cpc_key="cpc",
+            conversion_rate_key="conversion_rate",
+            acos_key="acos",
+            units_key="units",
+        )
+        reconciled = sum(1 for c in campaigns if c.get("metric_source") == "ad_group_reconciled")
+        if reconciled:
+            validation_warnings.append(
+                f"Reconciled {reconciled} SP campaign row(s) from ad group totals because the Campaign metric layer was stale or differed from target-supported Ad group totals."
+            )
+
     total_spend = sum(c.get("spend", 0) for c in campaigns)
     total_sales = sum(c.get("sales", 0) for c in campaigns)
     overall_acos = total_spend / total_sales if total_sales > 0 else 0
@@ -285,6 +312,26 @@ def parse_sb_sheet(file_path):
                 "orders": safe_float(row.get("orders")),
                 "acos": safe_float(row.get("acos")),
             })
+    if sb_campaigns:
+        from ppc_shared.extraction import (
+            _sum_ad_group_metrics,
+            _sum_target_metrics,
+            apply_ad_group_metric_reconciliation,
+        )
+
+        campaign_map = {c["campaign_name"]: c for c in sb_campaigns}
+        apply_ad_group_metric_reconciliation(
+            campaign_map,
+            _sum_ad_group_metrics(df),
+            _sum_target_metrics(df),
+            orders_key="orders",
+            clicks_key="clicks",
+            ctr_key="ctr",
+            cpc_key="cpc",
+            conversion_rate_key="conversion_rate",
+            acos_key="acos",
+            units_key="units",
+        )
     return {"sb_campaigns": sb_campaigns, "sb_keywords": sb_keywords}
 
 
@@ -341,6 +388,26 @@ def parse_sd_sheet(file_path):
                 "orders": safe_float(row.get("orders")),
                 "acos": safe_float(row.get("acos")),
             })
+    if sd_campaigns:
+        from ppc_shared.extraction import (
+            _sum_ad_group_metrics,
+            _sum_target_metrics,
+            apply_ad_group_metric_reconciliation,
+        )
+
+        campaign_map = {c["campaign_name"]: c for c in sd_campaigns}
+        apply_ad_group_metric_reconciliation(
+            campaign_map,
+            _sum_ad_group_metrics(df),
+            _sum_target_metrics(df),
+            orders_key="orders",
+            clicks_key="clicks",
+            ctr_key="ctr",
+            cpc_key="cpc",
+            conversion_rate_key="conversion_rate",
+            acos_key="acos",
+            units_key="units",
+        )
     return {"sd_campaigns": sd_campaigns, "sd_targets": sd_targets}
 
 

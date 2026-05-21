@@ -48,6 +48,206 @@ def _sum_ad_group_metrics(df, portfolio=None):
     return aggregates
 
 
+def _sum_target_metrics(df, portfolio=None):
+    """Aggregate lower-level targeting metrics by campaign for reconciliation."""
+    aggregates = {}
+    portfolio_norm = normalize_text(portfolio)
+
+    for _, row in df.iterrows():
+        entity = normalize_text(row.get("entity", row.get("Entity", "")))
+        if entity not in ("keyword", "product targeting", "audience targeting"):
+            continue
+
+        state = normalize_text(row.get("state", ""))
+        if state == "archived":
+            continue
+
+        if portfolio and portfolio != "-":
+            port_name = get_portfolio_name(row)
+            if normalize_text(port_name) != portfolio_norm:
+                continue
+
+        name = get_campaign_name(row)
+        if not name:
+            continue
+
+        agg = aggregates.setdefault(name, {
+            "impressions": 0.0,
+            "clicks": 0.0,
+            "spend": 0.0,
+            "sales": 0.0,
+            "orders_all": 0.0,
+        })
+        agg["impressions"] += safe_float(row.get("impressions"))
+        agg["clicks"] += safe_float(row.get("clicks"))
+        agg["spend"] += safe_float(row.get("spend"))
+        agg["sales"] += safe_float(row.get("sales"))
+        agg["orders_all"] += safe_float(row.get("units", row.get("orders")))
+
+    return aggregates
+
+
+def _close_enough(left, right, rel_tol=0.01, abs_tol=1.0):
+    return abs((left or 0.0) - (right or 0.0)) <= max(abs_tol, abs(right or 0.0) * rel_tol)
+
+
+def _materially_different(left, right, rel_tol=0.02, abs_tol=1.0):
+    return not _close_enough(left, right, rel_tol=rel_tol, abs_tol=abs_tol)
+
+
+def should_use_ad_group_metrics(campaign, ad_group, target=None, orders_key="orders_all"):
+    """Return True when campaign-level conversion metrics appear stale.
+
+    Amazon bulk exports can surface two metric bases in SP rows. Campaign and
+    placement rows may hold stale/lower sales and orders while ad group,
+    keyword/product-targeting, and STR rows reconcile to the current totals.
+    """
+    if not ad_group:
+        return False
+
+    campaign_sales = campaign.get("sales", 0) or 0
+    campaign_orders = campaign.get(orders_key, 0) or 0
+    ad_group_sales = ad_group.get("sales", 0) or 0
+    ad_group_orders = ad_group.get("orders_all", 0) or 0
+
+    if ad_group_sales <= 0 and ad_group_orders <= 0:
+        return False
+
+    # Existing safety net: campaign rows with zero conversions can be stale.
+    if campaign_sales <= 0 and campaign_orders <= 0:
+        return True
+
+    differs_from_campaign = (
+        _materially_different(campaign_sales, ad_group_sales)
+        or _materially_different(campaign_orders, ad_group_orders)
+    )
+    if not differs_from_campaign:
+        return False
+
+    # Stronger rule: only replace non-zero campaign rows when the ad-group
+    # aggregate is independently supported by target-level rows in the bulk.
+    if not target:
+        return False
+
+    target_sales = target.get("sales", 0) or 0
+    target_orders = target.get("orders_all", 0) or 0
+    if target_sales <= 0 and target_orders <= 0:
+        return False
+
+    return (
+        _close_enough(ad_group_sales, target_sales)
+        and _close_enough(ad_group_orders, target_orders)
+    )
+
+
+def _target_supports_ad_group(ad_group, target):
+    if not ad_group or not target:
+        return False
+    ad_group_sales = ad_group.get("sales", 0) or 0
+    ad_group_orders = ad_group.get("orders_all", 0) or 0
+    target_sales = target.get("sales", 0) or 0
+    target_orders = target.get("orders_all", 0) or 0
+    if ad_group_sales <= 0 and ad_group_orders <= 0:
+        return False
+    if target_sales <= 0 and target_orders <= 0:
+        return False
+    return (
+        _close_enough(ad_group_sales, target_sales)
+        and _close_enough(ad_group_orders, target_orders)
+    )
+
+
+def campaign_layer_is_stale(campaigns, ad_group_metrics, target_metrics=None, orders_key="orders_all"):
+    """Detect account-level stale Campaign rows against ad-group/target totals."""
+    target_metrics = target_metrics or {}
+    campaign_sales = campaign_orders = 0.0
+    ad_group_sales = ad_group_orders = 0.0
+    target_sales = target_orders = 0.0
+
+    for name, camp in campaigns.items():
+        ad_group = ad_group_metrics.get(name)
+        target = target_metrics.get(name)
+        if not _target_supports_ad_group(ad_group, target):
+            continue
+        campaign_sales += camp.get("sales", 0) or 0
+        campaign_orders += camp.get(orders_key, 0) or 0
+        ad_group_sales += ad_group.get("sales", 0) or 0
+        ad_group_orders += ad_group.get("orders_all", 0) or 0
+        target_sales += target.get("sales", 0) or 0
+        target_orders += target.get("orders_all", 0) or 0
+
+    if ad_group_sales <= 0 and ad_group_orders <= 0:
+        return False
+
+    ad_group_matches_target = (
+        _close_enough(ad_group_sales, target_sales)
+        and _close_enough(ad_group_orders, target_orders)
+    )
+    campaign_differs = (
+        _materially_different(campaign_sales, ad_group_sales)
+        or _materially_different(campaign_orders, ad_group_orders)
+    )
+    return ad_group_matches_target and campaign_differs
+
+
+def apply_ad_group_metric_reconciliation(
+    campaigns,
+    ad_group_metrics,
+    target_metrics=None,
+    orders_key="orders_all",
+    clicks_key="clicks_all",
+    ctr_key="ctr_all",
+    cpc_key="cpc_all",
+    conversion_rate_key="cr_all",
+    acos_key="acos_all",
+    units_key=None,
+):
+    """Mutate campaign metrics to ad-group totals when campaign rows are stale."""
+    target_metrics = target_metrics or {}
+    whole_layer_stale = campaign_layer_is_stale(
+        campaigns,
+        ad_group_metrics,
+        target_metrics,
+        orders_key=orders_key,
+    )
+    for name, agg in ad_group_metrics.items():
+        camp = campaigns.get(name)
+        if not camp:
+            continue
+        use_ad_group = (
+            whole_layer_stale and _target_supports_ad_group(agg, target_metrics.get(name))
+        ) or should_use_ad_group_metrics(
+            camp,
+            agg,
+            target_metrics.get(name),
+            orders_key=orders_key,
+        )
+        if not use_ad_group:
+            camp.setdefault("metric_source", "campaign")
+            continue
+
+        impressions = agg["impressions"]
+        clicks = agg["clicks"]
+        spend = agg["spend"]
+        sales = agg["sales"]
+        orders = agg["orders_all"]
+
+        camp["impressions"] = impressions
+        camp[clicks_key] = clicks
+        camp["spend"] = spend
+        camp["sales"] = sales
+        camp[orders_key] = orders
+        if units_key:
+            camp[units_key] = orders
+        camp[ctr_key] = (clicks / impressions) if impressions > 0 else 0.0
+        camp[cpc_key] = (spend / clicks) if clicks > 0 else 0.0
+        camp[conversion_rate_key] = (orders / clicks) if clicks > 0 else 0.0
+        camp[acos_key] = (spend / sales) if sales > 0 else 0.0
+        camp["metric_source"] = "ad_group_reconciled"
+
+    return campaigns
+
+
 def extract_campaigns(df, portfolio=None):
     """Extract campaign-level rows from a sheet DataFrame, optionally filtered by portfolio."""
     camps = {}
@@ -87,32 +287,9 @@ def extract_campaigns(df, portfolio=None):
             "bidding_strategy": safe_str(row.get("bidding strategy")),
         }
 
-    # Some Amazon SP exports leave Campaign rows at zero conversions while the
-    # matching Ad group rows hold the real campaign totals.
     ad_group_metrics = _sum_ad_group_metrics(df, portfolio)
-    for name, agg in ad_group_metrics.items():
-        camp = camps.get(name)
-        if not camp:
-            continue
-        if camp.get("orders_all", 0) > 0 or camp.get("sales", 0) > 0:
-            continue
-        if agg["orders_all"] <= 0 and agg["sales"] <= 0:
-            continue
-
-        impressions = agg["impressions"]
-        clicks = agg["clicks"]
-        spend = agg["spend"]
-        sales = agg["sales"]
-        orders = agg["orders_all"]
-
-        camp["clicks_all"] = clicks
-        camp["spend"] = spend
-        camp["sales"] = sales
-        camp["orders_all"] = orders
-        camp["ctr_all"] = (clicks / impressions) if impressions > 0 else 0.0
-        camp["cpc_all"] = (spend / clicks) if clicks > 0 else 0.0
-        camp["cr_all"] = (orders / clicks) if clicks > 0 else 0.0
-        camp["acos_all"] = (spend / sales) if sales > 0 else 0.0
+    target_metrics = _sum_target_metrics(df, portfolio)
+    apply_ad_group_metric_reconciliation(camps, ad_group_metrics, target_metrics)
 
     return camps
 

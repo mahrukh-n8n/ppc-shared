@@ -76,6 +76,7 @@ def build_campaigns(bulk_path, portfolio=None, days=7, dashboard_path=None, br_p
             "budget": c.get("budget"),
             "ppc_revenue": round(c.get("sales", 0), 2),
             "orders_all": c.get("orders_all"),
+            "metric_source": c.get("metric_source", "campaign"),
             "orders_tos": tos.get("orders_tos"),
             "orders_ros": ros.get("orders_ros"),
             "orders_pp": pp.get("orders_pp"),
