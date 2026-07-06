@@ -170,6 +170,18 @@ def parse_sp_sheet(file_path):
                     "sku": safe_str(row.get("sku")),
                     "asin": safe_str(row.get("asin (informational only)")),
                     "state": state,
+                    "impressions": safe_float(row.get("impressions")),
+                    "clicks": safe_float(row.get("clicks")),
+                    "spend": safe_float(row.get("spend")),
+                    "sales": safe_float(row.get("sales")),
+                    "orders": safe_float(row.get("orders")),
+                    "units": safe_float(row.get("units")),
+                    "acos": safe_float(row.get("acos")),
+                    "cpc": safe_float(row.get("cpc")),
+                    "roas": safe_float(row.get("roas")),
+                    "conversion_rate": safe_float(row.get("conversion rate")),
+                    "ctr": safe_float(row.get("click-through rate")),
+                    "metric_source": "native_product_ad",
                 })
             elif entity in ("product targeting", "negative product targeting"):
                 state = normalize_text(row.get("state", ""))
