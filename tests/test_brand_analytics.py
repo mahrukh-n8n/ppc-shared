@@ -81,6 +81,8 @@ class CatalogExtraFieldsTests(unittest.TestCase):
         self.assertIn("clicks_one_day", fields)
         self.assertEqual(result["summary"]["clicks_one_day"], 354)
         self.assertAlmostEqual(result["summary"]["impressions_price"], 6.49)
+        comparison = query_reports(reports("catalog"), {"family": "catalog", "view": "comparison"})
+        self.assertTrue(all(row["label"].startswith("XXX · ") for row in comparison["rows"]))
 
 
 if __name__ == "__main__":

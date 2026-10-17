@@ -287,7 +287,7 @@ def query_reports(reports, options):
     result = []
     for key, group in groups.items():
         first = group[0]
-        result.append(dict(metrics(group), id=key, label=first["period_label"] if by_period else first.get("query", first.get("asin", "")) + (" · " + first["period_label"] if family == "catalog" else ""), title=first.get("title"), category=first.get("category"), period_end=first["period_end"]))
+        result.append(dict(metrics(group), id=key, label=(first.get("asin", "") + " · " + first["period_label"]) if family == "catalog" else first["period_label"] if by_period else first.get("query", ""), title=first.get("title"), category=first.get("category"), period_end=first["period_end"]))
     defs = columns(family, view)
     kinds = {c["field"]: c["kind"] for c in defs}
     filters = options.get("filters", {})
