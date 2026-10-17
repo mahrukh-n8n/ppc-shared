@@ -1,6 +1,3 @@
-import csv
-import io
-import math
 from pathlib import Path
 import unittest
 from ppc_shared.brand_analytics import parse_report, query_reports, metrics
@@ -75,10 +72,6 @@ class BrandAnalyticsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Reporting Date conflicts"):
             parse_report(raw.replace("6/22/2024", "6/21/2024").encode())
 
-
-if __name__ == "__main__":
-    unittest.main()
-
 class CatalogExtraFieldsTests(unittest.TestCase):
     def test_catalog_source_fields_are_available_with_explicit_aggregation(self):
         result = query_reports(reports("catalog"), {"family": "catalog", "view": "details"})
@@ -88,3 +81,7 @@ class CatalogExtraFieldsTests(unittest.TestCase):
         self.assertIn("clicks_one_day", fields)
         self.assertEqual(result["summary"]["clicks_one_day"], 354)
         self.assertAlmostEqual(result["summary"]["impressions_price"], 6.49)
+
+
+if __name__ == "__main__":
+    unittest.main()

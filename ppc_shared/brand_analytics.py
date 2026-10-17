@@ -2,7 +2,6 @@
 
 Additive module: existing parsers and numeric conventions are unchanged.
 """
-import base64
 import csv
 import hashlib
 import io
