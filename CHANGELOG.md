@@ -2,6 +2,10 @@
 
 This file records parser behavior changes that affect downstream PPC logs and audit outputs.
 
+## 2026-10-20
+
+- Recommended campaign budgets now allocate total average daily spend (`total_spend / days`) by campaign order share instead of allocating configured daily budgets. Invalid period lengths leave the recommendation missing; zero orders or zero spend produce zero recommendations.
+
 ## 2026-05-21 20:02 PKT
 
 ### Shared campaign metric reconciliation

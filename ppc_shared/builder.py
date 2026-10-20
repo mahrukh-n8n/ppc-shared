@@ -132,6 +132,7 @@ def build_campaigns(bulk_path, portfolio=None, days=7, dashboard_path=None, br_p
     total_spend = sum(c.get("total_spend", 0) or 0 for c in all_campaigns)
     total_orders = sum(c.get("orders_all", 0) or 0 for c in all_campaigns)
     total_budget = sum(c.get("budget", 0) or 0 for c in all_campaigns)
+    total_daily_spend = total_spend / days if days and days > 0 else None
 
     for c in all_campaigns:
         spend = c.get("total_spend", 0) or 0
@@ -139,7 +140,10 @@ def build_campaigns(bulk_path, portfolio=None, days=7, dashboard_path=None, br_p
         c["cpa"] = round(spend / orders, 2) if orders > 0 else None
         c["spend_ratio"] = round(spend / total_spend, 4) if total_spend > 0 else 0
         c["order_ratio"] = round(orders / total_orders, 4) if total_orders > 0 else 0
-        c["recommended_budget"] = round(c["order_ratio"] * total_budget, 2) if total_budget > 0 else 0
+        c["recommended_budget"] = (
+            round(c["order_ratio"] * total_daily_spend, 2)
+            if total_daily_spend is not None else None
+        )
 
     # Build summary
     total_ppc_revenue = sum(c.get("ppc_revenue", 0) or 0 for c in all_campaigns)
