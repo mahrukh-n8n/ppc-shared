@@ -17,6 +17,42 @@ def reports(family):
 
 
 class BrandAnalyticsTests(unittest.TestCase):
+    def test_blank_sqp_queries_preserve_metrics_and_distinct_real_query(self):
+        import csv
+        import io
+        for family in ("brand", "asin"):
+            path = next(FIXTURES.glob("*Brand_View*" if family == "brand" else "*ASIN_View*"))
+            original = parse_report(path.read_bytes())
+            records = list(csv.reader(io.StringIO(path.read_text(encoding="utf-8-sig"))))
+            records[2][0] = ""
+            records[3][0] = "Unknown search query"
+            stream = io.StringIO()
+            csv.writer(stream).writerows(records)
+            report = parse_report(stream.getvalue().encode())
+            report["id"] = "blank-test"
+            self.assertEqual(len(report["rows"]), len(original["rows"]))
+            self.assertEqual(report["rows"][0]["query"], "")
+            self.assertEqual(report["rows"][0]["source"]["Search Query"], "")
+            self.assertIn("Row 3", report["warnings"][0])
+            result = query_reports([report], {"family": family})
+            self.assertEqual(result["row_count"], len(original["rows"]))
+            self.assertEqual(sum(r["label"] == "Unknown search query" for r in result["rows"]), 2)
+            for field in ("volume", "impressions", "clicks", "purchases", "market_impressions", "market_clicks", "market_purchases"):
+                self.assertEqual(result["summary"][field], metrics(original["rows"])[field])
+
+    def test_non_weekly_exports_rejected_for_every_family(self):
+        for path in FIXTURES.glob("*.csv"):
+            raw = path.read_text(encoding="utf-8-sig")
+            for period in ("Monthly", "Quarterly"):
+                with self.subTest(file=path.name, period=period):
+                    with self.assertRaisesRegex(ValueError, "Only weekly exports"):
+                        parse_report(raw.replace("Weekly", period).encode())
+
+    def test_catalog_blank_asin_still_rejected(self):
+        raw = next(FIXTURES.glob("*Catalog*" )).read_text(encoding="utf-8-sig")
+        with self.assertRaisesRegex(ValueError, "empty.*ASIN"):
+            parse_report(raw.replace(",xxx,", ",,", 1).encode())
+
     def test_workbook_aggregates(self):
         expected = {
             "brand": [0.000489792620794474, 0.0011765259541625488, 0.0011607661056297156, 0.001932740626207963, 0.06443298969072164, 0.32, 0.2, 0.026823720101190145, 0.3243446750435315, 0.12174690573674055, 0.037609269589531494, -0.004344675043531476, 0.07825309426325947],

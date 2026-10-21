@@ -2,6 +2,10 @@
 
 This file records parser behavior changes that affect downstream PPC logs and audit outputs.
 
+## 2026-10-21
+
+- Brand Analytics retains SQP observations with blank Search Query text, preserves source cells and all metrics, and supplies row-numbered warnings. Dashboards/export label these observations “Unknown search query” while keeping them separate from literal queries with that name. Catalog still requires ASINs; weekly-only validation and existing numeric parsing remain unchanged.
+
 ## 2026-10-20
 
 - Recommended campaign budgets now allocate total average daily spend (`total_spend / days`) by campaign order share instead of allocating configured daily budgets. Invalid period lengths leave the recommendation missing; zero orders or zero spend produce zero recommendations.

@@ -19,6 +19,8 @@ def header_key(value):
     return re.sub(r"\s*:\s*", ":", normalize_text(value))
 
 
+UNKNOWN_QUERY = "Unknown search query"
+
 STAGES = ("impressions", "clicks", "cart adds", "purchases")
 
 
@@ -104,7 +106,7 @@ def parse_report(content):
         raise ValueError("Missing Brand or ASIN metadata")
     if family == "asin":
         identity = identity.strip().upper()
-    rows, seen = [], set()
+    rows, seen, warnings = [], set(), []
     for index, values in enumerate(records[header_index + 1:], header_index + 2):
         if not any(v.strip() for v in values):
             continue
@@ -129,7 +131,9 @@ def parse_report(content):
             row[field] = parsed
         observation = row.get("query") if family != "catalog" else row.get("asin", "").upper()
         if not observation:
-            raise ValueError(f"Row {index}: empty query or ASIN")
+            if family == "catalog":
+                raise ValueError(f"Row {index}: empty ASIN")
+            warnings.append(f"Row {index}: blank Search Query retained as {UNKNOWN_QUERY}; its metrics are included in totals.")
         row["match_key"] = normalize_text(observation)
         if row["match_key"] in seen:
             raise ValueError(f"Row {index}: duplicate observation {observation}")
@@ -153,7 +157,7 @@ def parse_report(content):
         raise ValueError("Maximum 50,000 observations per report")
     return {"family": family, "identity": identity.strip(), "period_start": start.isoformat(), "period_end": end.isoformat(),
             "period_label": period_label, "granularity": "weekly", "headers": headers, "metadata": metadata,
-            "checksum": hashlib.sha256(content).hexdigest(), "rows": rows}
+            "checksum": hashlib.sha256(content).hexdigest(), "rows": rows, "warnings": warnings}
 
 
 def _sum(rows, key):
@@ -272,7 +276,8 @@ def query_reports(reports, options):
             row = dict(source, period_id=report["id"], period_label=report["period_label"], period_end=report["period_end"])
             if "keywords" in options and row.get("match_key") not in {normalize_text(k) for k in options["keywords"]}:
                 continue
-            if options.get("search") and normalize_text(options["search"]) not in normalize_text(row.get("query", row.get("title", "")) + " " + row.get("asin", "")):
+            display_text = (row.get("query") or UNKNOWN_QUERY) if family != "catalog" else row.get("title", "")
+            if options.get("search") and normalize_text(options["search"]) not in normalize_text(display_text + " " + row.get("asin", "")):
                 continue
             if "asins" in options and family == "catalog" and row.get("asin") not in options["asins"]:
                 continue
@@ -287,7 +292,7 @@ def query_reports(reports, options):
     result = []
     for key, group in groups.items():
         first = group[0]
-        result.append(dict(metrics(group), id=key, label=(first.get("asin", "") + " · " + first["period_label"]) if family == "catalog" else first["period_label"] if by_period else first.get("query", ""), title=first.get("title"), category=first.get("category"), period_end=first["period_end"]))
+        result.append(dict(metrics(group), id=key, label=(first.get("asin", "") + " · " + first["period_label"]) if family == "catalog" else first["period_label"] if by_period else (first.get("query") or UNKNOWN_QUERY), title=first.get("title"), category=first.get("category"), period_end=first["period_end"]))
     defs = columns(family, view)
     kinds = {c["field"]: c["kind"] for c in defs}
     filters = options.get("filters", {})
